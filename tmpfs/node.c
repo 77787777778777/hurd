@@ -74,8 +74,8 @@ diskfs_free_node (struct node *np, mode_t mode)
     {
     case DT_REG:
       if (np->dn->u.reg.memobj != MACH_PORT_NULL) {
-      /* XXX GNU Mach will terminate the object, and thus existing mappings
-       * will get SIGBUS.  */
+	/* Mappings of the file keep the memory object alive (see
+	   diskfs_truncate); only tmpfs's own references go here.  */
 	vm_deallocate (mach_task_self (), np->dn->u.reg.memref, 4096);
 	mach_port_deallocate (mach_task_self (), np->dn->u.reg.memobj);
       }	
@@ -457,7 +457,14 @@ diskfs_truncate (struct node *np, off_t size)
   off_t set_size = size;
   size = round_page (size);
 
-  if (np->dn->u.reg.memobj != MACH_PORT_NULL)
+  /* diskfs_drop_node truncates an unlinked file to zero once its last
+     reference is gone (diskfs_try_dropping_softrefs has cleared cache_id
+     by then).  The file may still be mapped, as shared memory usually is
+     after shm_unlink or unlink and close: do not shrink the memory object
+     then, or those mappings fault.  The kernel releases the object with
+     its last mapping.  */
+  if (np->dn->u.reg.memobj != MACH_PORT_NULL
+      && !(size == 0 && np->cache_id == 0))
     {
       error_t err = default_pager_object_set_size (np->dn->u.reg.memobj, set_size);
       if (err == MIG_BAD_ID)

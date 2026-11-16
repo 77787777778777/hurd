@@ -2695,13 +2695,21 @@ seqnos_memory_object_data_return(default_pager_t	ds,
 	    vm_size_t tail_size = round_page(limit) - limit;
 	    memset((void *) tail, 0, tail_size);
 
+	    /* Supply a copy and free ADDR below, like every returned page.
+	       The kernel wired this page for the pageout, on top of the
+	       wiring of our whole address space, and expects us to free
+	       it: sent on with the deallocate bit, it fails GNU Mach's
+	       vm_map_copyin_page_list: Assertion `m->wire_count == 1'.  */
 	    memory_object_data_supply(pager_request, trunc_page(limit), addr,
-				      vm_page_size, TRUE, VM_PROT_NONE,
+				      vm_page_size, FALSE, VM_PROT_NONE,
 				      TRUE, MACH_PORT_NULL);
 	    dstruct_lock(ds);
 	    ds->dpager.byte_limit = round_page(limit);
 	    dstruct_unlock(ds);
 	    pager_port_finish_write(ds);
+	    if (vm_deallocate(default_pager_self, addr, data_cnt)
+		!= KERN_SUCCESS)
+		panic(here,my_name);
 
 	    return(KERN_SUCCESS);
 	  }

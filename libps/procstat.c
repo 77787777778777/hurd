@@ -338,6 +338,18 @@ should_suppress_msgport (struct proc_stat *ps)
     /* All threads are suspended.  */
     return TRUE;
 
+  if ((have & PSTAT_THREAD_BASIC)
+      && ps->thread_basic_info->run_state == TH_STATE_HALTED)
+    /* All user threads are halted.  Halted threads never run their
+       msgport receive loop, so any msgport RPC sent to this task
+       (msg_get_init_port, msg_get_init_int, msg_report_wait, ...)
+       would block forever.  Summarize_thread_basic_info() in this file
+       sets run_state to TH_STATE_HALTED only when every non-idle,
+       non-died user thread is in TH_STATE_HALTED; mixed states yield
+       -1, so we never suppress when some thread could still answer.
+       See the ps hang diagnosed in stuff/timer_stress_issue.md.  */
+    return TRUE;
+
   if ((have & PSTAT_NUM_THREADS) && ps->num_threads == 0)
     /* No threads (some bug could cause the procserver still to think there's
        a msgport).  */
